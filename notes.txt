@@ -1,0 +1,84 @@
+Code notes:
+
+made w/hi-tech picc. each '.c' file has a corresponding header.
+
+baff.c - main program, sit a main loop and have the int handler work on all pwm'ing of leds. every 10ms
+		fetch AD status and update limits of sweep speed.
+	intHandler()
+		most time spent here, it's hit about every 250us. update led's based on pattern. circ pattern.
+	initT2()
+		setup the 250us timer
+	initLEDpins()
+		set in's/out's
+	initGlobals()
+		set initial state before turning on int's
+	initAD()
+		setup AD for int based conversions.
+		
+bl.c - functions for handling test modes and eeprom dumps
+delay.c - generic funcs for hardcoded delays. very important to us since we do pwm'ing in software.
+eeConst.c - funcs for pulling and converting eeprom data to 'c' data accesable data types.
+eeimage.c - the eeprom image created at compile time, modify or add as you see fit.
+serial.c - my hooks to the picc library so we can use printf's cleanly. linking in printf is expensive.
+
+
+
+/*
+ *	next rev:
+ *		- since I'm using serial port for programming stuff, use serial port for a power up banner
+ *		  of all eeprom variables (or whatever is important)(change)
+ *			- no banner needed, instead add selection to bl() to dump all vars
+ *		- look for kepress at bootup to determine if we jump to the eeprom modifying portion, or have option in
+ *		  in bl which pauses for x msec for kepress detect. a value of 0 would only do a quick lookup at the buffer
+ *		  also valuable as a startup delay if the user ever needs it for some reason
+ *		- bl menu options,
+ *			* read out errorReg (later add a circ buff and then dump the array)(go)
+ *			* resume/exit from bl. keypress is checked every 1000ms, when no keypress detected - hop out and
+ *				revert back to normal operation
+ *			* get/set overall intensity value, this is just an alias for the PWM_MAX value.
+ *			  a value of 100 is the 'normal' value, increasing this will lower the overall intensity
+ *			  decreasing will have an opposite effect (8b, 0->255)(change - but only recommend use w/incadecent lamps type?)
+ *			* get/set overall cycle speed value. Currently in 'tick' time units. This may change
+ *			  to accepting 'msec' units and doing conversion in code based on T2 period (16b, 0->65535 'ticks')(go)
+ *			* get/set T2CON value for init (8b, see device manual)(drop)
+ *			* get/set keypress sample rate for entering bl (16b, 100->5000 msec)(drop)
+ *			* pause/start interactive mode (change)
+ *				- change this to a 'step' mode instead. press the space bar to step, any other key drops out.
+ *			* upload pattern (to currently pointed address)(change)
+ *				- instead use ICSP to upload a pattern into a known location which is not protected)
+ *				- change to 'dump pattern'
+ *			* get/set pattern location pointer (not in eeprom, instead embed in flash w/pattern)(drop)
+ *			* get/set paterrn dimensions (not in eeprom, instead embed in flash w/pattern)(drop)
+ *			* get/set pattern text description (not in eeprom, instead embed in flash w/pattern)(drop)
+ *			* get/set flags:
+ *				1) invert driver outputs from pic (bit 1)
+ *				2) ignore intensity a/d input and use constant in eeprom (bit 2)(drop)
+ *				3) ignore speed a/d input and use constant in eeprom (bit 3)
+ *				4) pause cycle on powerup (this is initial value of 'pause' flag at powerup)(drop)
+ *		- put configurable items into eeprom,
+ *			* active state of led pins (for benefit of driver board)(go)
+ *			* scale values for cycle speed range pot(go)
+ *			* scale values for intensity range pot (not able to implement since we need the port for DIO)(drop)
+ *			* initial cycle speed rate(go)
+ *				- this value is also used when the TPS is detected out of bounds (not there)
+ *			* maybe have seq[][] pointer location in eeprom so you can switch banks easily or change sizes (drop)
+ *			* seq array sizes ->  seq[x][y] (no, stuff in metadata on flash) (drop)
+ *		- update seq[][] to point into the 512byte page in flash, begin using this as a storage area for patterns (go)
+ *		- start using a/d to watch for cycle speed and intensity settings (in main loop)(done)
+ *		- use const & psect directive to make an eeprom image, define struct in eeconst.h first(done)
+ *		- use errorReg for error handling right now(done)
+ */
+ 
+ __IDLOC(rev value): 
+ v01.00 - initial release
+ v01.10 - added eeprom 'get' functions and made eeprom image
+ v01.11 - banner dump added to dump eeprom constants at powerup
+ v01.20	- * when I layed out the board I realized that I needed to do some pin swapping,
+		    a bunch of the drivers and pins have moved to different locations
+		  * added int driven a/d sampling
+		  * added a single errorReg var to hold the latest error, this will change to a circular buffer to read out the errors
+		    in the future (and maybe have a history of the chain of events) (do this in another bank)
+v01.50 - * added concept of upper/lower scaling limits too apply to interpolation alg for a/d input.
+		   computed every 10ms in main loop
+		 * had to move the ia[] array to bank1 because I'm VERY low on bank0 ram - will have to re-evaluate if this is really
+		   as harmful as I think due to bank switching (and I'm touching this array about every 200us) 
